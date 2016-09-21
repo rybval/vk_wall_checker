@@ -51,6 +51,7 @@ def get_last_dump(group_path):
         dump = json.load(file)
     return dump
 
+
 def extended_data_processing(data):
     # Function has side effect: "data" changed
     # turns list of dicts into dict of dicts with id as key.
@@ -118,7 +119,7 @@ def vk_timeout(last_call_time):
     time.sleep(vk.MIN_PAUSE_BETWEEN_CALLS - (time.time() - last_call_time))
 
 
-def get_new_dump(group_id, comments=False):
+def get_new_dump(app_id, access_token, group_id, group_id, comments=False):
     session = vk.Session(client_id = vk_app_id, access_token = vk_token)
     response = session.wall.get(owner_id = group_id, count = posts_count,
                                 extended = 1)
@@ -153,20 +154,31 @@ def compare_dumps(old, new):
 
 if __name__ == '__main__':
     group_path = os.path.append(working_directory, str(group_id))
-
+    new_dump = get_new_dump(app_id, access_token, group_id)
     try:
         last_dump = get_last_dump(group_path)
     except FileNotFoundError:
-        # First run for this wall
-        # Makedir
-        # Save current dump
-        # Send email
+        # No dir — first run for this wall
+        os.makedirs(group_path, 0o700, True)
+        save_dump(new_dump, group_path)
+        subject = 'Запуск отслеживания для группы -'+str(group_id)
+        text = ('Для группы -'+str(group_id)+' запущено отслеживание.\n')
+        msg = mail.make(from_email, to_email, subject, text)
+        mail.send(msg)
         exit()
     except ValueError:
-        # No previous dumps
-        # Save current dump
-        # Send email
+        # No previous dumps — dumps was deleted
+        save_dump(new_dump, group_path)
+        subject = 'Перезапуск отслеживания для группы -'+str(group_id)
+        text = ('Для группы -'+str(group_id)+' перезапущено отслеживание.\n'
+                'Вероятно, предыдущие дампы для группы были удалены.')
+        msg = mail.make(from_email, to_email, subject, text)
+        mail.send(msg)
         exit()
 
-    msg = mail.make(text, html)
+    diff = compare_dumps(last_dump, new_dump)
+
+    html = build_html_diff(diff)
+    subject = build_subject(diff)
+    msg = mail.make(from_email, to_email, subject, html)
     mail.send(msg)
