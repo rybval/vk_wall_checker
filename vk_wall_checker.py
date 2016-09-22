@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Checks vk wall for changes.
+"""Checks vk wall for changes.
 
 Downloads several last posts,
 compares them with local copy,
@@ -14,6 +13,8 @@ Recommended for use with cron.
 Using: vk_wall_checker.py <owner-ID> <access-token> <from-email> <to-email>
 """
 
+import sys
+import argparse
 import vk
 import time
 import json
@@ -152,7 +153,27 @@ def compare_dumps(old, new):
             new_comments, deleted_comments, changed_comments)
 
 
+def createArgParser():
+    parser = argparse.ArgumentParser(description='Checks vk wall for changes')
+
+    # To do: args checking, help strings
+    wall = parser.add_mutually_exclusive_group(required=True)
+    wall.add_argument('-u', '--user-id', type=int)
+    wall.add_argument('-g', '--group-id', type=int)
+    wall.add_argument('-w', '--wall-url')
+
+    parser.add_argument('-f', '--from-email', required=True)
+    parser.add_argument('-t', '--to-email', required=True)
+
+    parser.add_argument('-p', '--app-id', type=int, required=True)
+    parser.add_argument('-a', '--access-token', required=True)
+
+    parser.add_argument('-c', '--comments', action='store_true')
+    return parser
+
 if __name__ == '__main__':
+    argparser = createArgParser()
+
     group_path = os.path.append(working_directory, str(group_id))
     new_dump = get_new_dump(app_id, access_token, group_id)
     try:
