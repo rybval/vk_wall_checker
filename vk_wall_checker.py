@@ -44,7 +44,7 @@ def extended_data_processing(data):
     # turns list of dicts into dict of dicts with id as key.
     d = {d_['id']: d_ for d_ in data}
     for d_ in data:
-        for key in d_.keys():
+        for key in tuple(d_):
             if key not in ('first_name', 'last_name', 'name', 'photo_50'):
                 del d_[key]
     return d
@@ -59,7 +59,7 @@ def attachments_processing(attachments):
         elif attachment['type'] == 'audio':
             pass
         elif attachment['type'] == 'doc':
-            for key in attachment.keys():
+            for key in tuple(attachment):
                 if key not in ('id', 'title', 'size',
                                'url', 'photo_100', 'type'):
                     del attachment[key]
@@ -84,7 +84,7 @@ def response_processing(response):
     groups = extended_data_processing(response['groups'])
 
     for item in items:
-        for key in item.keys():
+        for key in tuple(item):
             if key not in ('id', 'owner_id', 'from_id', 'date', 'text',
                            'attachments', 'signer_id', 'copy_history',
                            'is_pinned', 'reply_to_user', 'reply_to_comment'):
@@ -97,7 +97,7 @@ def response_processing(response):
 
 
 def add_new_extended_data(data, new_data):
-    for id in new_data.keys():
+    for id in tuple(new_data):
         if id not in data:
             data[id] = new_data[id]
 
