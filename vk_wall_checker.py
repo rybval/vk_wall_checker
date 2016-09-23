@@ -29,15 +29,28 @@ import mail
 WORKING_DIR = os.path.expanduser("~/.vk_group_checker")
 POSTS_COUNT = 12
 DATETIME_FORMAT = '%Y.%m.%d-%H.%M.%S'
-HTML_TEMPLATE = """\
-<html>
+TEMPLATE = {
+'message': """<html>
   <head></head>
   <body>
     {}
   </body>
-</html>
-"""
+</html>""",
+'section': """<p><b>{}</b></p>{}""",
+'post': """<p>id: {id}</p>
+<p>Дата публикации: {date}</p>
+<p>Автор: {author}</p>
+<p>Подписано: {signer}</p>
+<p>Текст: {text}</p>
+{attachments}""",
+'attachments': """{}""",
+'comment': """ """,
+'photo': """<img src="{link}">""",
+'document': """Документ: <a href="{link}">{name}</a>""",
+'audio': """ """,
+'video': """ """}
 
+template['post'].format(posts[5])
 
 def extended_data_processing(data):
     # Function has side effect: "data" changed
@@ -92,7 +105,6 @@ def response_processing(response):
         if 'attachments' in item:
             attachments_processing(item['attachments'])
 
-
     return (items, profiles, groups)
 
 
@@ -102,14 +114,13 @@ def add_new_extended_data(data, new_data):
             data[id] = new_data[id]
 
 
-def get_new_dump(app_id, access_token, group_id, comments=False, 
+def get_new_dump(app_id, access_token, owner, comments=False, 
                  count = POSTS_COUNT):
-    session = vk.Session(client_id = vk_app_id, access_token = vk_token)
-    response = session.wall.get(owner_id = group_id, count = count,
+    session = vk.Session(client_id = app_id, access_token = access_token)
+    response = session.wall.get(owner_id = owner, count = count,
                                 extended = 1)
     t = time.time()
     posts, profiles, groups = response_processing(response)
-
 
     if comments:
         for post in posts:
@@ -122,6 +133,10 @@ def get_new_dump(app_id, access_token, group_id, comments=False,
 
             add_new_extended_data(profiles, profiles_)
             add_new_extended_data(groups, groups_)
+            
+    dump = posts
+    out = dump, {'profiles': profiles, 'groups': groups}
+    return out
 
 
 def get_last_dump(wall_path):
@@ -141,10 +156,93 @@ def save_dump(dump, wall_path):
         json.dump(dump, file, ensure_ascii=False, indent='    ',sort_keys=True)
 
 
+def extract_ids(items):
+    ids = set()
+    for item in items:
+        ids.add(item['id'])
+    return ids
+
+
 def compare_dumps(old, new):
+    old_ids = extract_ids(old)
+    new_ids = extract_ids(new)
+    appeared_ids = new_ids - old_ids 
+    disappeared_ids = old_ids - new_ids
+    newest_old = max(old_ids)
+    oldest_new = min(new_ids)
+
+    new_posts = []
+    for post in new:
+        if post['id'] in appeared_ids and post['id'] > newest_old:
+            new_posts.append(post)
+
+    deleted_posts = []
+    for post in old:
+        if post['id'] in disappeared_ids and post['id'] > oldest_new:
+            deleted_posts.append(post)
+
+    changed_posts = None
+    new_comments = None
+    deleted_comments = None
+    changed_comments = None
+    
     return (new_posts, deleted_posts, changed_posts,
             new_comments, deleted_comments, changed_comments)
 
+
+def build_part_subject(new, deleted, changed):
+    part = ''
+    if new_posts or deleted_posts or changed_posts:
+        changes = []
+        if new_posts:
+            changes.append('создание')
+        if deleted_posts:
+            changes.append('удаление')
+        if changed_posts:
+            changes.append('изменение')
+        part = '(' + ', '.join(changes) + ')'
+    return part
+
+
+def build_subject(new_posts, deleted_posts, changed_posts,
+                  new_comments, deleted_comments, changed_comments):
+    p = build_part_subject(new_posts, deleted_posts, changed_posts)
+    c = build_part_subject(new_comments, deleted_comments, changed_comments)
+    if p:
+        p = 'Посты ' + p
+    if c:
+        c = 'Комментарии ' + c
+        
+    if p and c:
+        subject = '. '.join(p, c)
+    else:
+        subject = p + c
+    
+    return subject
+
+def build_html(new_posts, deleted_posts, changed_posts,
+               new_comments, deleted_comments, changed_comments, 
+               extended):
+    sections = []
+    if new_posts:
+        new_posts_html = []
+        for post in new_posts:
+            author = get_name_by_id(post['from_id'], extended)
+            if 'signer_id' in post:
+                signer = get_name_by_id(post['signer_id'], extended)
+            else:
+                signer = author
+            dt = datetime.fromtimestamp(post['date']).strftime(DATETIME_FORMAT)
+            
+            new_posts_html.append(TEMPLATE['post'].format(
+            id = post['id'],
+            text = post['text']),
+            date = dt,
+            author = author,
+            signer = signer)
+            
+        sections.append(
+            TEMPLATE['section'].format('Новые посты', ''.join(new_posts_html)))
 
 def create_argparser():
     parser = argparse.ArgumentParser(description='Checks vk wall for changes')
@@ -163,6 +261,7 @@ def create_argparser():
     parser.add_argument('-c', '--comments', action='store_true')
     return parser
 
+
 if __name__ == '__main__':
     argparser = create_argparser()
     args = argparser.parse_args(sys.argv)
@@ -174,8 +273,8 @@ if __name__ == '__main__':
         owner = args.user_id
 
     wall_path = os.path.append(WORKING_DIR, str(owner))
-    new_dump = get_new_dump(args.app_id, args.access_token,
-                            owner, args.comments)
+    new_dump, extended = get_new_dump(args.app_id, args.access_token,
+                                      owner, args.comments)
     try:
         last_dump = get_last_dump(wall_path)
     except FileNotFoundError:
@@ -199,7 +298,7 @@ if __name__ == '__main__':
 
     diff = compare_dumps(last_dump, new_dump)
 
-    html = build_html_diff(diff)
-    subject = build_subject(diff)
+    subject = build_subject(*diff)
+    html = build_html(*diff, extended)
     msg = mail.make(args.from_email, args.to_email, subject, html)
     mail.send(msg)
