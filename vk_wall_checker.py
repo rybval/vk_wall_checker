@@ -43,14 +43,9 @@ html_template = """\
 vk_doc_types = ("текстовый документ", "архив", "gif", "изображение",
                 "аудио", "видео", "электронная книга", "неизвестно")
 
-def get_last_dump(group_path):
-    names = os.listdir(group_path)
-    last = max(names,
-        key=lambda n: datetime.strptime(n.split('.')[0], datetimeformat))
-    path = os.path.join(group_path, last)
-    with bz2.open(path, 'rt', encoding='utf-8') as file:
-        dump = json.load(file)
-    return dump
+
+def vk_timeout(last_call_time):
+    time.sleep(vk.MIN_PAUSE_BETWEEN_CALLS - (time.time() - last_call_time))
 
 
 def extended_data_processing(data):
@@ -116,11 +111,7 @@ def add_new_extended_data(data, new_data):
             data[id] = new_data[id]
 
 
-def vk_timeout(last_call_time):
-    time.sleep(vk.MIN_PAUSE_BETWEEN_CALLS - (time.time() - last_call_time))
-
-
-def get_new_dump(app_id, access_token, group_id, group_id, comments=False):
+def get_new_dump(app_id, access_token, group_id, comments=False):
     session = vk.Session(client_id = vk_app_id, access_token = vk_token)
     response = session.wall.get(owner_id = group_id, count = posts_count,
                                 extended = 1)
@@ -141,9 +132,19 @@ def get_new_dump(app_id, access_token, group_id, group_id, comments=False):
             add_new_extended_data(groups, groups_)
 
 
-def save_dump(dump, group_path):
+def get_last_dump(wall_path):
+    names = os.listdir(wall_path)
+    last = max(names,
+        key=lambda n: datetime.strptime(n.split('.')[0], datetimeformat))
+    path = os.path.join(wall_path, last)
+    with bz2.open(path, 'rt', encoding='utf-8') as file:
+        dump = json.load(file)
+    return dump
+
+
+def save_dump(dump, wall_path):
     now_str = datetime.now().strftime(datetimeformat)
-    path = os.path.join(group_path, now_str+'.json.bz2')
+    path = os.path.join(wall_path, now_str+'.json.bz2')
     with bz2.open(path, 'wt', encoding='utf-8') as file:
         json.dump(dump, file, ensure_ascii=False, indent='    ',sort_keys=True)
 
@@ -153,14 +154,13 @@ def compare_dumps(old, new):
             new_comments, deleted_comments, changed_comments)
 
 
-def createArgParser():
+def create_argparser():
     parser = argparse.ArgumentParser(description='Checks vk wall for changes')
 
     # To do: args checking, help strings
     wall = parser.add_mutually_exclusive_group(required=True)
     wall.add_argument('-u', '--user-id', type=int)
     wall.add_argument('-g', '--group-id', type=int)
-    wall.add_argument('-w', '--wall-url')
 
     parser.add_argument('-f', '--from-email', required=True)
     parser.add_argument('-t', '--to-email', required=True)
@@ -172,28 +172,36 @@ def createArgParser():
     return parser
 
 if __name__ == '__main__':
-    argparser = createArgParser()
+    argparser = create_argparser()
+    args = argparser.parse_args(sys.argv)
+    if args.group_id:
+        owner = -abs(args.group_id)
+    elif args.user_id:
+        if args.user_id < 0:
+            args.error('User ID must be positive')
+        owner = args.user_id
 
-    group_path = os.path.append(working_directory, str(group_id))
-    new_dump = get_new_dump(app_id, access_token, group_id)
+    wall_path = os.path.append(working_directory, str(owner))
+    new_dump = get_new_dump(args.app_id, args.access_token,
+                            owner, args.comments)
     try:
-        last_dump = get_last_dump(group_path)
+        last_dump = get_last_dump(wall_path)
     except FileNotFoundError:
         # No dir — first run for this wall
-        os.makedirs(group_path, 0o700, True)
-        save_dump(new_dump, group_path)
-        subject = 'Запуск отслеживания для группы -'+str(group_id)
-        text = ('Для группы -'+str(group_id)+' запущено отслеживание.\n')
-        msg = mail.make(from_email, to_email, subject, text)
+        os.makedirs(wall_path, 0o700, True)
+        save_dump(new_dump, wall_path)
+        subject = 'Запуск отслеживания для стены '+str(owner)
+        text = ('Для стены -'+str(owner)+' запущено отслеживание.\n')
+        msg = mail.make(args.from_email, args.to_email, subject, text)
         mail.send(msg)
         exit()
     except ValueError:
         # No previous dumps — dumps was deleted
-        save_dump(new_dump, group_path)
-        subject = 'Перезапуск отслеживания для группы -'+str(group_id)
-        text = ('Для группы -'+str(group_id)+' перезапущено отслеживание.\n'
-                'Вероятно, предыдущие дампы для группы были удалены.')
-        msg = mail.make(from_email, to_email, subject, text)
+        save_dump(new_dump, wall_path)
+        subject = 'Перезапуск отслеживания для стены -'+str(owner)
+        text = ('Для стены -'+str(owner)+' перезапущено отслеживание.\n'
+                'Вероятно, предыдущие дампы для стены были удалены.')
+        msg = mail.make(args.from_email, args.to_email, subject, text)
         mail.send(msg)
         exit()
 
@@ -201,5 +209,5 @@ if __name__ == '__main__':
 
     html = build_html_diff(diff)
     subject = build_subject(diff)
-    msg = mail.make(from_email, to_email, subject, html)
+    msg = mail.make(args.from_email, args.to_email, subject, html)
     mail.send(msg)
