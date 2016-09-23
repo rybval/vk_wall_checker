@@ -9,8 +9,6 @@ send all via email.
 
 Requires local SMTP server.
 Recommended for use with cron.
-
-Using: vk_wall_checker.py <owner-ID> <access-token> <from-email> <to-email>
 """
 
 import sys
@@ -28,10 +26,10 @@ import os
 import difflib
 import mail
 
-working_directory = os.path.expanduser("~/.vk_group_checker")
-posts_count = 12
-datetimeformat = '%Y.%m.%d-%H.%M.%S'
-html_template = """\
+WORKING_DIR = os.path.expanduser("~/.vk_group_checker")
+POSTS_COUNT = 12
+DATETIME_FORMAT = '%Y.%m.%d-%H.%M.%S'
+HTML_TEMPLATE = """\
 <html>
   <head></head>
   <body>
@@ -39,13 +37,6 @@ html_template = """\
   </body>
 </html>
 """
-
-vk_doc_types = ("текстовый документ", "архив", "gif", "изображение",
-                "аудио", "видео", "электронная книга", "неизвестно")
-
-
-def vk_timeout(last_call_time):
-    time.sleep(vk.MIN_PAUSE_BETWEEN_CALLS - (time.time() - last_call_time))
 
 
 def extended_data_processing(data):
@@ -111,9 +102,10 @@ def add_new_extended_data(data, new_data):
             data[id] = new_data[id]
 
 
-def get_new_dump(app_id, access_token, group_id, comments=False):
+def get_new_dump(app_id, access_token, group_id, comments=False, 
+                 count = POSTS_COUNT):
     session = vk.Session(client_id = vk_app_id, access_token = vk_token)
-    response = session.wall.get(owner_id = group_id, count = posts_count,
+    response = session.wall.get(owner_id = group_id, count = count,
                                 extended = 1)
     t = time.time()
     posts, profiles, groups = response_processing(response)
@@ -121,7 +113,7 @@ def get_new_dump(app_id, access_token, group_id, comments=False):
 
     if comments:
         for post in posts:
-            vk_timeout(t)
+            vk.timeout(t)
             response = session.wall.getComments(owner_id=post['owner_id'],
                                    post_id=post['id'], count=100, sort='asc',
                                    preview_length=0, extended=1)
@@ -135,7 +127,7 @@ def get_new_dump(app_id, access_token, group_id, comments=False):
 def get_last_dump(wall_path):
     names = os.listdir(wall_path)
     last = max(names,
-        key=lambda n: datetime.strptime(n.split('.')[0], datetimeformat))
+        key=lambda n: datetime.strptime(n.split('.')[0], DATETIME_FORMAT))
     path = os.path.join(wall_path, last)
     with bz2.open(path, 'rt', encoding='utf-8') as file:
         dump = json.load(file)
@@ -143,7 +135,7 @@ def get_last_dump(wall_path):
 
 
 def save_dump(dump, wall_path):
-    now_str = datetime.now().strftime(datetimeformat)
+    now_str = datetime.now().strftime(DATETIME_FORMAT)
     path = os.path.join(wall_path, now_str+'.json.bz2')
     with bz2.open(path, 'wt', encoding='utf-8') as file:
         json.dump(dump, file, ensure_ascii=False, indent='    ',sort_keys=True)
@@ -181,7 +173,7 @@ if __name__ == '__main__':
             args.error('User ID must be positive')
         owner = args.user_id
 
-    wall_path = os.path.append(working_directory, str(owner))
+    wall_path = os.path.append(WORKING_DIR, str(owner))
     new_dump = get_new_dump(args.app_id, args.access_token,
                             owner, args.comments)
     try:
