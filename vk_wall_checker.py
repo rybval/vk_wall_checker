@@ -20,7 +20,7 @@ import bz2
 from urllib.request import urlopen
 from urllib.parse import urlparse
 from html.parser import HTMLParser
-from datetime import datetime, date, time
+from datetime import datetime
 import re
 import os
 import difflib
@@ -36,21 +36,21 @@ TEMPLATE = {
     {}
   </body>
 </html>""",
-'section': """<p><b>{}</b></p>{}""",
-'post': """<p>id: {id}</p>
+'section': """<p><b>{name}</b></p>{content}""",
+'post': """<p>ID: {id}</p>
 <p>Дата публикации: {date}</p>
 <p>Автор: {author}</p>
-<p>Подписано: {signer}</p>
+{sign}
 <p>Текст: {text}</p>
 {attachments}""",
-'attachments': """{}""",
+'sign': """<p>Подписано: {signer}</p>""",
+'attachments': """{attachments_joined}""",
 'comment': """ """,
 'photo': """<img src="{link}">""",
 'document': """Документ: <a href="{link}">{name}</a>""",
 'audio': """ """,
 'video': """ """}
 
-template['post'].format(posts[5])
 
 def extended_data_processing(data):
     # Function has side effect: "data" changed
@@ -114,7 +114,7 @@ def add_new_extended_data(data, new_data):
             data[id] = new_data[id]
 
 
-def get_new_dump(app_id, access_token, owner, comments=False, 
+def get_new_dump(app_id, access_token, owner, comments=False,
                  count = POSTS_COUNT):
     session = vk.Session(client_id = app_id, access_token = access_token)
     response = session.wall.get(owner_id = owner, count = count,
@@ -133,7 +133,7 @@ def get_new_dump(app_id, access_token, owner, comments=False,
 
             add_new_extended_data(profiles, profiles_)
             add_new_extended_data(groups, groups_)
-            
+
     dump = posts
     out = dump, {'profiles': profiles, 'groups': groups}
     return out
@@ -142,18 +142,22 @@ def get_new_dump(app_id, access_token, owner, comments=False,
 def get_last_dump(wall_path):
     names = os.listdir(wall_path)
     last = max(names,
-        key=lambda n: datetime.strptime(n.split('.')[0], DATETIME_FORMAT))
+        key=lambda n: datetime.strptime(n.split('.json')[0], DATETIME_FORMAT))
     path = os.path.join(wall_path, last)
-    with bz2.open(path, 'rt', encoding='utf-8') as file:
-        dump = json.load(file)
+    with bz2.BZ2File(path, 'r') as file:
+        data = file.read()
+    datas = data.decode(encoding = 'utf-8')
+    dump = json.loads(datas)
     return dump
 
 
 def save_dump(dump, wall_path):
     now_str = datetime.now().strftime(DATETIME_FORMAT)
     path = os.path.join(wall_path, now_str+'.json.bz2')
-    with bz2.open(path, 'wt', encoding='utf-8') as file:
-        json.dump(dump, file, ensure_ascii=False, indent='    ',sort_keys=True)
+    datas = json.dumps(dump, ensure_ascii=False, indent='    ',sort_keys=True)
+    data = datas.encode(encoding = 'utf-8')
+    with bz2.BZ2File(path, 'w') as file:
+        file.write(data)
 
 
 def extract_ids(items):
@@ -166,7 +170,7 @@ def extract_ids(items):
 def compare_dumps(old, new):
     old_ids = extract_ids(old)
     new_ids = extract_ids(new)
-    appeared_ids = new_ids - old_ids 
+    appeared_ids = new_ids - old_ids
     disappeared_ids = old_ids - new_ids
     newest_old = max(old_ids)
     oldest_new = min(new_ids)
@@ -185,20 +189,24 @@ def compare_dumps(old, new):
     new_comments = None
     deleted_comments = None
     changed_comments = None
-    
-    return (new_posts, deleted_posts, changed_posts,
+
+    out =  (new_posts, deleted_posts, changed_posts,
             new_comments, deleted_comments, changed_comments)
+    if not (new_posts or deleted_posts or changed_posts or
+            new_comments or deleted_comments or changed_comments):
+        out = None
+    return out
 
 
 def build_part_subject(new, deleted, changed):
     part = ''
-    if new_posts or deleted_posts or changed_posts:
+    if new or deleted or changed:
         changes = []
-        if new_posts:
+        if new:
             changes.append('создание')
-        if deleted_posts:
+        if deleted:
             changes.append('удаление')
-        if changed_posts:
+        if changed:
             changes.append('изменение')
         part = '(' + ', '.join(changes) + ')'
     return part
@@ -212,37 +220,86 @@ def build_subject(new_posts, deleted_posts, changed_posts,
         p = 'Посты ' + p
     if c:
         c = 'Комментарии ' + c
-        
+
     if p and c:
         subject = '. '.join(p, c)
     else:
         subject = p + c
-    
+
     return subject
 
+
+def get_name_by_id(id, extended):
+    if id > 0:
+        profile = extended['profiles'][id]
+        name = profile['first_name'] + ' ' + profile['last_name']
+    else:
+        name = extended['groups'][abs(id)]['name']
+    return name
+
+def build_attachment_html(attachment, template):
+    # to do attachments processing
+    type = attachment['type']
+    if type == 'photo': pass
+    elif type == 'audio': pass
+    elif type == 'video': pass
+    elif type == 'doc': pass
+    elif type == 'link': pass
+    elif type == 'poll': pass
+    elif type == 'album': pass
+    else: pass
+
+    return '<p>'+type+ '</p>\n'
+
+def build_post_html(post, template):
+    author = get_name_by_id(post['from_id'], extended)
+    if 'signer_id' in post:
+        signer = get_name_by_id(post['signer_id'], extended)
+        sign = template['sign'].format(signer = signer)
+    else:
+        sign = ''
+
+    if 'attachments' in post:
+        attachment_html_list = []
+        for attachment in post['attachments']:
+            attachment_html = build_attachment_html(attachment, template)
+            attachment_html_list.append(attachment_html)
+    attachments_html = ''.join(attachment_html_list)
+
+    dt = datetime.fromtimestamp(post['date']).strftime(DATETIME_FORMAT)
+
+    post_html = template['post'].format(id = post['id'],
+                                        text = post['text'],
+                                        date = dt,
+                                        author = author,
+                                        sign = sign,
+                                        attachments = attachments_html)
+    return post_html
+
+
+def build_section_html(name, posts, template):
+    post_htmls = []
+    for post in posts:
+        post_htmls.append(build_post_html(post, template))
+    posts_html = ''.join(post_htmls)
+    section = template['section'].format(name=name, content=posts_html)
+    return section
+
+
 def build_html(new_posts, deleted_posts, changed_posts,
-               new_comments, deleted_comments, changed_comments, 
-               extended):
+               new_comments, deleted_comments, changed_comments,
+               extended, template):
     sections = []
     if new_posts:
-        new_posts_html = []
-        for post in new_posts:
-            author = get_name_by_id(post['from_id'], extended)
-            if 'signer_id' in post:
-                signer = get_name_by_id(post['signer_id'], extended)
-            else:
-                signer = author
-            dt = datetime.fromtimestamp(post['date']).strftime(DATETIME_FORMAT)
-            
-            new_posts_html.append(TEMPLATE['post'].format(
-            id = post['id'],
-            text = post['text']),
-            date = dt,
-            author = author,
-            signer = signer)
-            
-        sections.append(
-            TEMPLATE['section'].format('Новые посты', ''.join(new_posts_html)))
+        sect = build_section_html('Новые посты', new_posts, template)
+        sections.append(sect)
+    if deleted_posts:
+        sect = build_section_html('Удалённые посты', deleted_posts, template)
+        sections.append(sect)
+    html = template['message'].format(''.join(sections))
+    return html
+    # to do processing of rest diff parts
+
 
 def create_argparser():
     parser = argparse.ArgumentParser(description='Checks vk wall for changes')
@@ -264,7 +321,7 @@ def create_argparser():
 
 if __name__ == '__main__':
     argparser = create_argparser()
-    args = argparser.parse_args(sys.argv)
+    args = argparser.parse_args(sys.argv[1:])
     if args.group_id:
         owner = -abs(args.group_id)
     elif args.user_id:
@@ -272,33 +329,35 @@ if __name__ == '__main__':
             args.error('User ID must be positive')
         owner = args.user_id
 
-    wall_path = os.path.append(WORKING_DIR, str(owner))
+    wall_path = os.path.join(WORKING_DIR, str(owner))
     new_dump, extended = get_new_dump(args.app_id, args.access_token,
                                       owner, args.comments)
     try:
         last_dump = get_last_dump(wall_path)
-    except FileNotFoundError:
+    except OSError:
         # No dir — first run for this wall
         os.makedirs(wall_path, 0o700, True)
         save_dump(new_dump, wall_path)
         subject = 'Запуск отслеживания для стены '+str(owner)
-        text = ('Для стены -'+str(owner)+' запущено отслеживание.\n')
+        text = ('Для стены '+str(owner)+' запущено отслеживание.\n')
         msg = mail.make(args.from_email, args.to_email, subject, text)
         mail.send(msg)
         exit()
     except ValueError:
         # No previous dumps — dumps was deleted
         save_dump(new_dump, wall_path)
-        subject = 'Перезапуск отслеживания для стены -'+str(owner)
-        text = ('Для стены -'+str(owner)+' перезапущено отслеживание.\n'
+        subject = 'Перезапуск отслеживания для стены '+str(owner)
+        text = ('Для стены '+str(owner)+' перезапущено отслеживание.\n'
                 'Вероятно, предыдущие дампы для стены были удалены.')
         msg = mail.make(args.from_email, args.to_email, subject, text)
         mail.send(msg)
         exit()
 
     diff = compare_dumps(last_dump, new_dump)
-
-    subject = build_subject(*diff)
-    html = build_html(*diff, extended)
-    msg = mail.make(args.from_email, args.to_email, subject, html)
-    mail.send(msg)
+    
+    if diff:
+        save_dump(new_dump, wall_path)
+        subject = build_subject(*diff)
+        html = build_html(*diff, extended = extended, template = TEMPLATE)
+        msg = mail.make(args.from_email, args.to_email, subject, html=html)
+        mail.send(msg)
