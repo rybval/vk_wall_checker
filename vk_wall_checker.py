@@ -7,7 +7,7 @@ compares them with local copy,
 extracts changes like new post, editions in post, new comments,
 send all via email.
 
-Requires local SMTP server.
+Requires local SMTP server, mail.py.
 Recommended for use with cron.
 """
 
@@ -26,30 +26,39 @@ import os
 import difflib
 import mail
 
+VK_URL = 'https://vk.com'
 WORKING_DIR = os.path.expanduser("~/.vk_group_checker")
 POSTS_COUNT = 12
 DATETIME_FORMAT = '%Y.%m.%d-%H.%M.%S'
 TEMPLATE = {
 'message': """<html>
-  <head></head>
-  <body>
-    {}
-  </body>
+<head></head>
+<body>
+<p><b><a href="{target_link}">{target_name}</a></b></p>
+{sections}
+</body>
 </html>""",
-'section': """<p><b>{name}</b></p>{content}""",
-'post': """<p>ID: {id}</p>
+'section': """<hr>
+<p> </p>
+<p><b>{name}</b></p>
+{content}
+""",
+'post': """<p>ID: <a href="{link}">{id}</a></p>
 <p>Дата публикации: {date}</p>
-<p>Автор: {author}</p>
+<p>Автор: <a href="{author_link}">{author_name}</a></p>
 {sign}
 <p>Текст: {text}</p>
-{attachments}""",
+{attachments}
+<p>------------------------</p>
+<p> </p>""",
 'sign': """<p>Подписано: {signer}</p>""",
 'attachments': """{attachments_joined}""",
 'comment': """ """,
 'photo': """<img src="{link}">""",
-'document': """Документ: <a href="{link}">{name}</a>""",
-'audio': """ """,
-'video': """ """}
+'document': """Документ: <a href="{link}">{title}</a>""",
+'audio': """Аудиозапись: <a href="{link}">{artist} — {title}</a> 
+({lenght}, {size} Мб)""",
+'video': """Видео: <a href="{link}">{title}</a>"""}
 
 
 def extended_data_processing(data):
@@ -234,25 +243,35 @@ def get_name_by_id(id, extended):
         profile = extended['profiles'][id]
         name = profile['first_name'] + ' ' + profile['last_name']
     else:
-        name = extended['groups'][abs(id)]['name']
+        name = extended['groups'][abs(int(id))]['name']
     return name
+    
+def get_link_by_id(id, extended):
+    if id > 0:
+        link = VK_URL+'/id{}'.format(id)
+    else:
+        # to do detection 'public', 'event' and other group types
+        link = VK_URL+'/club{}'.format(abs(int(id)))
+    return link
 
 def build_attachment_html(attachment, template):
     # to do attachments processing
-    type = attachment['type']
-    if type == 'photo': pass
-    elif type == 'audio': pass
-    elif type == 'video': pass
-    elif type == 'doc': pass
-    elif type == 'link': pass
-    elif type == 'poll': pass
-    elif type == 'album': pass
+    if attachment['type'] == 'photo': pass
+    elif attachment['type'] == 'audio': pass
+    elif attachment['type'] == 'video': pass
+    elif attachment['type'] == 'doc': pass
+    elif attachment['type'] == 'link': pass
+    elif attachment['type'] == 'poll': pass
+    elif attachment['type'] == 'album': pass
     else: pass
 
-    return '<p>'+type+ '</p>\n'
+    return '<p>'+attachment['type']+'</p>\n'
 
 def build_post_html(post, template):
-    author = get_name_by_id(post['from_id'], extended)
+    # to do refactoring
+    author_name = get_name_by_id(post['from_id'], extended)
+    author_link = get_link_by_id(post['from_id'], extended)
+        
     if 'signer_id' in post:
         signer = get_name_by_id(post['signer_id'], extended)
         sign = template['sign'].format(signer = signer)
@@ -267,11 +286,16 @@ def build_post_html(post, template):
     attachments_html = ''.join(attachment_html_list)
 
     dt = datetime.fromtimestamp(post['date']).strftime(DATETIME_FORMAT)
+    
+    # to do generation of link to post
+    link = ''
 
     post_html = template['post'].format(id = post['id'],
+                                        link = link,
                                         text = post['text'],
                                         date = dt,
-                                        author = author,
+                                        author_link = author_link,
+                                        author_name = author_name,
                                         sign = sign,
                                         attachments = attachments_html)
     return post_html
@@ -286,9 +310,9 @@ def build_section_html(name, posts, template):
     return section
 
 
-def build_html(new_posts, deleted_posts, changed_posts,
-               new_comments, deleted_comments, changed_comments,
-               extended, template):
+def build_html(target_id, extended, template,
+               new_posts, deleted_posts, changed_posts,
+               new_comments, deleted_comments, changed_comments,):
     sections = []
     if new_posts:
         sect = build_section_html('Новые посты', new_posts, template)
@@ -296,7 +320,9 @@ def build_html(new_posts, deleted_posts, changed_posts,
     if deleted_posts:
         sect = build_section_html('Удалённые посты', deleted_posts, template)
         sections.append(sect)
-    html = template['message'].format(''.join(sections))
+    html = template['message'].format(target_link = get_link_by_id(target_id),
+                                      target_name = get_name_by_id(target_id),
+                                      sections = ''.join(sections))
     return html
     # to do processing of rest diff parts
 
@@ -358,6 +384,6 @@ if __name__ == '__main__':
     if diff:
         save_dump(new_dump, wall_path)
         subject = build_subject(*diff)
-        html = build_html(*diff, extended = extended, template = TEMPLATE)
+        html = build_html(owner, extended, TEMPLATE, *diff)
         msg = mail.make(args.from_email, args.to_email, subject, html=html)
         mail.send(msg)
