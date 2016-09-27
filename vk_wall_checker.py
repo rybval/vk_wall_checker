@@ -43,11 +43,11 @@ TEMPLATE = {
 <p><b>{name}</b></p>
 {content}
 """,
-'post': """<p>ID: <a href="{link}">{id}</a></p>
-<p>Дата публикации: {date}</p>
-<p>Автор: <a href="{author_link}">{author_name}</a></p>
-{sign}
-<p>Текст: {text}</p>
+'post': """<p><a href="{link}"><font color="#808080">{id}, {date}</font></a></p>
+<p><a href="{author_link}"><font color="#808080">{author_name}</font></a></p>
+{sign}</font>
+<p> </p>
+{text}
 {attachments}
 <p>------------------------</p>
 <p> </p>""",
@@ -56,7 +56,7 @@ TEMPLATE = {
 'comment': """ """,
 'photo': """<img src="{link}">""",
 'document': """Документ: <a href="{link}">{title}</a>""",
-'audio': """Аудиозапись: <a href="{link}">{artist} — {title}</a> 
+'audio': """Аудиозапись: <a href="{link}">{artist} — {title}</a>
 ({lenght}, {size} Мб)""",
 'video': """Видео: <a href="{link}">{title}</a>"""}
 
@@ -151,7 +151,8 @@ def get_new_dump(app_id, access_token, owner, comments=False,
 def get_last_dump(wall_path):
     names = os.listdir(wall_path)
     last = max(names,
-        key=lambda n: datetime.strptime(n.split('.json')[0], DATETIME_FORMAT))
+        key=lambda n: datetime.strptime(n.split('.json.')[0],
+                                        DATETIME_FORMAT))
     path = os.path.join(wall_path, last)
     with bz2.BZ2File(path, 'r') as file:
         data = file.read()
@@ -245,7 +246,7 @@ def get_name_by_id(id, extended):
     else:
         name = extended['groups'][abs(int(id))]['name']
     return name
-    
+
 def get_link_by_id(id, extended):
     if id > 0:
         link = VK_URL+'/id{}'.format(id)
@@ -267,32 +268,38 @@ def build_attachment_html(attachment, template):
 
     return '<p>'+attachment['type']+'</p>\n'
 
+
+def build_text_html(text):
+    html = '<p>' + text.replace('\n', '</p>\n<p>') + '</p>'
+    return html
+
+
 def build_post_html(post, template):
     # to do refactoring
     author_name = get_name_by_id(post['from_id'], extended)
     author_link = get_link_by_id(post['from_id'], extended)
-        
+
     if 'signer_id' in post:
         signer = get_name_by_id(post['signer_id'], extended)
         sign = template['sign'].format(signer = signer)
     else:
         sign = ''
 
+    attachment_html_list = []
     if 'attachments' in post:
-        attachment_html_list = []
         for attachment in post['attachments']:
             attachment_html = build_attachment_html(attachment, template)
             attachment_html_list.append(attachment_html)
     attachments_html = ''.join(attachment_html_list)
 
     dt = datetime.fromtimestamp(post['date']).strftime(DATETIME_FORMAT)
-    
-    # to do generation of link to post
-    link = ''
+
+    link = 'https://vk.com/wall{owner}_{id}'.format(owner = post['owner_id'],
+                                                    id = post['id'])
 
     post_html = template['post'].format(id = post['id'],
                                         link = link,
-                                        text = post['text'],
+                                        text = build_text_html(post['text']),
                                         date = dt,
                                         author_link = author_link,
                                         author_name = author_name,
@@ -320,9 +327,10 @@ def build_html(target_id, extended, template,
     if deleted_posts:
         sect = build_section_html('Удалённые посты', deleted_posts, template)
         sections.append(sect)
-    html = template['message'].format(target_link = get_link_by_id(target_id),
-                                      target_name = get_name_by_id(target_id),
-                                      sections = ''.join(sections))
+    html = template['message'].format(
+                             target_link = get_link_by_id(target_id, extended),
+                             target_name = get_name_by_id(target_id, extended),
+                             sections = ''.join(sections))
     return html
     # to do processing of rest diff parts
 
@@ -380,7 +388,7 @@ if __name__ == '__main__':
         exit()
 
     diff = compare_dumps(last_dump, new_dump)
-    
+
     if diff:
         save_dump(new_dump, wall_path)
         subject = build_subject(*diff)
