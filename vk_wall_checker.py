@@ -28,6 +28,7 @@ import mail
 
 VK_URL = 'https://vk.com'
 WORKING_DIR = os.path.expanduser("~/.vk_group_checker")
+EXTENSION = '.json.bz2'
 POSTS_COUNT = 12
 DATETIME_FORMAT = '%Y.%m.%d-%H.%M.%S'
 TEMPLATE = {
@@ -45,20 +46,21 @@ TEMPLATE = {
 """,
 'post': """<p><a href="{link}"><font color="#808080">{id}, {date}</font></a></p>
 <p><a href="{author_link}"><font color="#808080">{author_name}</font></a></p>
-{sign}</font>
+{sign}
 <p> </p>
 {text}
 {attachments}
 <p>------------------------</p>
 <p> </p>""",
-'sign': """<p>Подписано: {signer}</p>""",
-'attachments': """{attachments_joined}""",
-'comment': """ """,
-'photo': """<img src="{link}">""",
-'document': """Документ: <a href="{link}">{title}</a>""",
-'audio': """Аудиозапись: <a href="{link}">{artist} — {title}</a>
-({lenght}, {size} Мб)""",
-'video': """Видео: <a href="{link}">{title}</a>"""}
+'sign': ('<p><font color="#808080">Подписано:</font> '
+'<a href="{signer_link}"><font color="#808080">{signer_name}</font></a></p>'),
+'attachments': '{attachments_joined}',
+'comment': '' ,
+'photo': '<img src="{link}">',
+'document': 'Документ: <a href="{link}">{title}</a>',
+'audio': ('Аудиозапись: <a href="{link}">{artist} — {title}</a> '
+'({lenght}, {size} Мб)'),
+'video': 'Видео: <a href="{link}">{title}</a>'}
 
 
 def extended_data_processing(data):
@@ -149,9 +151,9 @@ def get_new_dump(app_id, access_token, owner, comments=False,
 
 
 def get_last_dump(wall_path):
-    names = os.listdir(wall_path)
+    names = [fn for fn in os.listdir(wall_path) if fn.endswith(EXTENSION)]
     last = max(names,
-        key=lambda n: datetime.strptime(n.split('.json.')[0],
+        key=lambda n: datetime.strptime(n.split(EXTENSION)[0],
                                         DATETIME_FORMAT))
     path = os.path.join(wall_path, last)
     with bz2.BZ2File(path, 'r') as file:
@@ -163,7 +165,7 @@ def get_last_dump(wall_path):
 
 def save_dump(dump, wall_path):
     now_str = datetime.now().strftime(DATETIME_FORMAT)
-    path = os.path.join(wall_path, now_str+'.json.bz2')
+    path = os.path.join(wall_path, now_str+EXTENSION)
     datas = json.dumps(dump, ensure_ascii=False, indent='    ',sort_keys=True)
     data = datas.encode(encoding = 'utf-8')
     with bz2.BZ2File(path, 'w') as file:
@@ -280,8 +282,10 @@ def build_post_html(post, template):
     author_link = get_link_by_id(post['from_id'], extended)
 
     if 'signer_id' in post:
-        signer = get_name_by_id(post['signer_id'], extended)
-        sign = template['sign'].format(signer = signer)
+        signer_name = get_name_by_id(post['signer_id'], extended)
+        signer_link = get_link_by_id(post['signer_id'], extended)
+        sign = template['sign'].format(signer_name = signer_name,
+                                       signer_link = signer_link)
     else:
         sign = ''
 
