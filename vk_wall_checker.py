@@ -23,7 +23,8 @@ from html.parser import HTMLParser
 from datetime import datetime
 import re
 import os
-import difflib
+from difflib import Differ
+import copy
 import mail
 
 VK_URL = 'https://vk.com'
@@ -177,25 +178,86 @@ def extract_ids(items):
     return ids
 
 
+def compare_texts(old, new):
+    if old == new:
+        return None
+
+    # does not detect changes in line endings
+    old_words = old.split()
+    new_words = new.split()
+    differ = Differ()
+    diff_words = tuple(differ.compare(old_words, new_words))
+
+    for word in diff_words:
+        if word.startswith('+ ') or word.startswith('- '):
+            break
+    else:
+        return None
+
+    diff_marked_text = ''
+    for word in diff_words:
+        if word.startswith('+ '):
+            diff_marked_text += '<ADDED>' + word[2:] + '</ADDED>' + ' '
+        elif word.startswith('- '):
+            diff_marked_text += '<DELETED>' + word[2:] + '</DELETED>' + ' '
+        elif word.startswith('  '):
+            diff_marked_text += word[2:] + ' '
+    return diff_marked_text
+
+
+def compare_posts(old, new):
+    if old == new:
+        return None
+
+    diff_marked_post = copy.deepcopy(old)
+
+    # detect only changes in text
+    text_diff = compare_texts(old['text'], new['text'])
+
+    if not text_diff:
+        return None
+
+    diff_marked_post['text'] = text_diff
+
+    return diff_marked_post
+
+
+def get_post_by_id(posts, id):
+    for post in posts:
+        if post['id'] == id:
+            return post
+    return None
+
+
 def compare_dumps(old, new):
     old_ids = extract_ids(old)
     new_ids = extract_ids(new)
     appeared_ids = new_ids - old_ids
     disappeared_ids = old_ids - new_ids
-    newest_old = max(old_ids)
+    still_ids = old_ids & new_ids
+    oldest_old = min(old_ids)
     oldest_new = min(new_ids)
 
     new_posts = []
     for post in new:
-        if post['id'] in appeared_ids and post['id'] > newest_old:
+        if post['id'] in appeared_ids and post['id'] > oldest_old:
             new_posts.append(post)
+    new_posts = tuple(sorted(new_posts, key = lambda d: -int(d['id'])))
 
     deleted_posts = []
     for post in old:
         if post['id'] in disappeared_ids and post['id'] > oldest_new:
             deleted_posts.append(post)
+    deleted_posts = tuple(sorted(deleted_posts, key = lambda d: -int(d['id'])))
 
-    changed_posts = None
+    changed_posts = []
+    for post in new:
+        if post['id'] in still_ids:
+            diff_post = compare_posts(get_post_by_id(old, post['id']), post)
+            if diff_post:
+                changed_posts.append(diff_post)
+    changed_posts = tuple(sorted(changed_posts, key = lambda d: -int(d['id'])))
+
     new_comments = None
     deleted_comments = None
     changed_comments = None
@@ -247,6 +309,7 @@ def get_name_by_id(id, extended):
         name = extended['groups'][abs(int(id))]['name']
     return name
 
+
 def get_link_by_id(id, extended):
     if id > 0:
         link = VK_URL+'/id{}'.format(id)
@@ -254,6 +317,7 @@ def get_link_by_id(id, extended):
         # to do detection 'public', 'event' and other group types
         link = VK_URL+'/club{}'.format(abs(int(id)))
     return link
+
 
 def build_attachment_html(attachment, template):
     # to do attachments processing
@@ -270,6 +334,13 @@ def build_attachment_html(attachment, template):
 
 
 def build_text_html(text):
+    text = text.replace('<DELETED>',
+                                '<strike><span style="background-color:pink">')
+    text = text.replace('</DELETED>', '</span></strike>')
+    text = text.replace('<ADDED>',
+                           '<span style="background-color:palegreen">')
+    text = text.replace('</ADDED>', '</span>')
+
     html = '<p>' + text.replace('\n', '</p>\n<p>') + '</p>'
     return html
 
@@ -326,6 +397,9 @@ def build_html(target_id, extended, template,
         sections.append(sect)
     if deleted_posts:
         sect = build_section_html('Удалённые посты', deleted_posts, template)
+        sections.append(sect)
+    if changed_posts:
+        sect = build_section_html('Изменённые посты', changed_posts, template)
         sections.append(sect)
     html = template['message'].format(
                              target_link = get_link_by_id(target_id, extended),
