@@ -368,8 +368,16 @@ if __name__ == '__main__':
         owner = args.user_id
 
     wall_path = os.path.join(WORKING_DIR, str(owner))
-    new_dump, extended = get_new_dump(args.app_id, args.access_token,
-                                      owner, args.comments)
+    try:
+        new_dump, extended = get_new_dump(args.app_id, args.access_token,
+                                          owner, args.comments)
+    except Exception as e:
+        msg = mail.make(args.from_email, args.to_email,
+                        'Ошибка при получении нового дампа',
+                        str(e))
+        mail.send(msg)
+        exit()
+
     try:
         last_dump = get_last_dump(wall_path)
     except OSError:
