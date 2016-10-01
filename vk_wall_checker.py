@@ -115,20 +115,20 @@ def response_processing(response):
         if 'attachments' in item:
             attachments_processing(item['attachments'])
 
-    return (items, profiles, groups)
+    return items, profiles, groups
 
 
 def add_new_extended_data(data, new_data):
-    for id in tuple(new_data):
-        if id not in data:
-            data[id] = new_data[id]
+    for ID in tuple(new_data):
+        if ID not in data:
+            data[ID] = new_data[ID]
 
 
-def get_new_dump(app_id, access_token, owner, comments=False,
-                 count = POSTS_COUNT):
-    session = vk.Session(client_id = app_id, access_token = access_token)
-    response = session.wall.get(owner_id = owner, count = count,
-                                extended = 1)
+def get_new_dump(app_id, access_token, owner,
+                 comments=False,
+                 count=POSTS_COUNT):
+    session = vk.Session(client_id=app_id, access_token=access_token)
+    response = session.wall.get(owner_id=owner, count=count, extended=1)
     t = time.time()
     posts, profiles, groups = response_processing(response)
 
@@ -136,8 +136,11 @@ def get_new_dump(app_id, access_token, owner, comments=False,
         for post in posts:
             vk.timeout(t)
             response = session.wall.getComments(owner_id=post['owner_id'],
-                                   post_id=post['id'], count=100, sort='asc',
-                                   preview_length=0, extended=1)
+                                                post_id=post['id'],
+                                                count=100,
+                                                sort='asc',
+                                                preview_length=0,
+                                                extended=1)
             t = time.time()
             post['comments'], profiles_, groups_= response_processing(response)
 
@@ -152,12 +155,12 @@ def get_new_dump(app_id, access_token, owner, comments=False,
 def get_last_dump(wall_path):
     names = [fn for fn in os.listdir(wall_path) if fn.endswith(EXTENSION)]
     last = max(names,
-        key=lambda n: datetime.strptime(n.split(EXTENSION)[0],
-                                        DATETIME_FORMAT))
+               key=lambda n: datetime.strptime(n.split(EXTENSION)[0],
+                                               DATETIME_FORMAT))
     path = os.path.join(wall_path, last)
-    with bz2.BZ2File(path, 'r') as file:
+    with bz2.BZ2File(path) as file:
         data = file.read()
-    datas = data.decode(encoding = 'utf-8')
+    datas = data.decode(encoding='utf-8')
     dump = json.loads(datas)
     return dump
 
@@ -165,8 +168,8 @@ def get_last_dump(wall_path):
 def save_dump(dump, wall_path):
     now_str = datetime.now().strftime(DATETIME_FORMAT)
     path = os.path.join(wall_path, now_str+EXTENSION)
-    datas = json.dumps(dump, ensure_ascii=False, indent='    ',sort_keys=True)
-    data = datas.encode(encoding = 'utf-8')
+    datas = json.dumps(dump, ensure_ascii=False, indent='    ', sort_keys=True)
+    data = datas.encode(encoding='utf-8')
     with bz2.BZ2File(path, 'w') as file:
         file.write(data)
 
@@ -222,9 +225,9 @@ def compare_posts(old, new):
     return diff_marked_post
 
 
-def get_post_by_id(posts, id):
+def get_post_by_id(posts, post_id):
     for post in posts:
-        if post['id'] == id:
+        if post['id'] == post_id:
             return post
     return None
 
@@ -242,13 +245,13 @@ def compare_dumps(old, new):
     for post in new:
         if post['id'] in appeared_ids and post['id'] > oldest_old:
             new_posts.append(post)
-    new_posts = tuple(sorted(new_posts, key = lambda d: -int(d['id'])))
+    new_posts = tuple(sorted(new_posts, key=lambda d: -int(d['id'])))
 
     deleted_posts = []
     for post in old:
         if post['id'] in disappeared_ids and post['id'] > oldest_new:
             deleted_posts.append(post)
-    deleted_posts = tuple(sorted(deleted_posts, key = lambda d: -int(d['id'])))
+    deleted_posts = tuple(sorted(deleted_posts, key=lambda d: -int(d['id'])))
 
     changed_posts = []
     for post in new:
@@ -256,14 +259,14 @@ def compare_dumps(old, new):
             diff_post = compare_posts(get_post_by_id(old, post['id']), post)
             if diff_post:
                 changed_posts.append(diff_post)
-    changed_posts = tuple(sorted(changed_posts, key = lambda d: -int(d['id'])))
+    changed_posts = tuple(sorted(changed_posts, key=lambda d: -int(d['id'])))
 
     new_comments = None
     deleted_comments = None
     changed_comments = None
 
-    out =  (new_posts, deleted_posts, changed_posts,
-            new_comments, deleted_comments, changed_comments)
+    out = (new_posts, deleted_posts, changed_posts,
+           new_comments, deleted_comments, changed_comments)
     if not (new_posts or deleted_posts or changed_posts or
             new_comments or deleted_comments or changed_comments):
         out = None
@@ -301,21 +304,21 @@ def build_subject(new_posts, deleted_posts, changed_posts,
     return subject
 
 
-def get_name_by_id(id, extended):
-    if id > 0:
-        profile = extended['profiles'][id]
+def get_name_by_id(owner_id, extended):
+    if owner_id > 0:
+        profile = extended['profiles'][owner_id]
         name = profile['first_name'] + ' ' + profile['last_name']
     else:
-        name = extended['groups'][abs(int(id))]['name']
+        name = extended['groups'][abs(int(owner_id))]['name']
     return name
 
 
-def get_link_by_id(id, extended):
-    if id > 0:
-        link = VK_URL+'/id{}'.format(id)
+def get_link_by_id(owner_id, extended):
+    if owner_id > 0:
+        link = VK_URL+'/id{}'.format(owner_id)
     else:
         # to do detection 'public', 'event' and other group types
-        link = VK_URL+'/club{}'.format(abs(int(id)))
+        link = VK_URL+'/club{}'.format(abs(int(owner_id)))
     return link
 
 
@@ -353,8 +356,8 @@ def build_post_html(post, template):
     if 'signer_id' in post:
         signer_name = get_name_by_id(post['signer_id'], extended)
         signer_link = get_link_by_id(post['signer_id'], extended)
-        sign = template['sign'].format(signer_name = signer_name,
-                                       signer_link = signer_link)
+        sign = template['sign'].format(signer_name=signer_name,
+                                       signer_link=signer_link)
     else:
         sign = ''
 
@@ -367,17 +370,17 @@ def build_post_html(post, template):
 
     dt = datetime.fromtimestamp(post['date']).strftime(DATETIME_FORMAT)
 
-    link = 'https://vk.com/wall{owner}_{id}'.format(owner = post['owner_id'],
-                                                    id = post['id'])
+    link = 'https://vk.com/wall{owner}_{id}'.format(owner=post['owner_id'],
+                                                    id=post['id'])
 
-    post_html = template['post'].format(id = post['id'],
-                                        link = link,
-                                        text = build_text_html(post['text']),
-                                        date = dt,
-                                        author_link = author_link,
-                                        author_name = author_name,
-                                        sign = sign,
-                                        attachments = attachments_html)
+    post_html = template['post'].format(id=post['id'],
+                                        link=link,
+                                        text=build_text_html(post['text']),
+                                        date=dt,
+                                        author_link=author_link,
+                                        author_name=author_name,
+                                        sign=sign,
+                                        attachments=attachments_html)
     return post_html
 
 
@@ -404,9 +407,9 @@ def build_html(target_id, extended, template,
         sect = build_section_html('Изменённые посты', changed_posts, template)
         sections.append(sect)
     html = template['message'].format(
-                             target_link = get_link_by_id(target_id, extended),
-                             target_name = get_name_by_id(target_id, extended),
-                             sections = ''.join(sections))
+                             target_link=get_link_by_id(target_id, extended),
+                             target_name=get_name_by_id(target_id, extended),
+                             sections=''.join(sections))
     return html
     # to do processing of rest diff parts
 
