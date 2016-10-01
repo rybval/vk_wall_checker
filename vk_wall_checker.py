@@ -55,7 +55,7 @@ TEMPLATE = {
 '<a href="{signer_link}"><font color="#808080">{signer_name}</font></a></p>'),
 'attachments': '{attachments_joined}',
 'comment': '' ,
-'photo': '<img src="{link}">',
+'photo': '<p><img src="{link}"></p>',
 'document': 'Документ: <a href="{link}">{title}</a>',
 'audio': ('Аудиозапись: <a href="{link}">{artist} — {title}</a> '
 '({lenght}, {size} Мб)'),
@@ -321,10 +321,18 @@ def get_link_by_id(owner_id, extended):
         link = VK_URL+'/club{}'.format(abs(int(owner_id)))
     return link
 
+def get_biggest_photo_link(photo):
+    # to do using width/height attributes of photo object
+    maxsize = max([int(key[6:]) for key in photo if key.startswith('photo_')])
+    return photo['photo_{}'.format(maxsize)]
 
 def build_attachment_html(attachment, template):
     # to do attachments processing
-    if attachment['type'] == 'photo': pass
+    if attachment['type'] == 'photo':
+        # to do link to photo page addition
+        photo_link = get_biggest_photo_link(attachment['photo'])
+        html = template['photo'].format(link=photo_link)
+        return html
     elif attachment['type'] == 'audio': pass
     elif attachment['type'] == 'video': pass
     elif attachment['type'] == 'doc': pass
