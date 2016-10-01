@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Checks vk wall for changes.
+"""
+Checks vk wall for changes.
 
 Downloads several last posts,
 compares them with local copy,
@@ -11,20 +12,17 @@ Requires local SMTP server, mail.py.
 Recommended for use with cron.
 """
 
+import os
 import sys
 import argparse
-import vk
 import time
 import json
 import bz2
-from urllib.request import urlopen
-from urllib.parse import urlparse
-from html.parser import HTMLParser
 from datetime import datetime
-import re
-import os
-from difflib import Differ
+import difflib
 import copy
+
+import vk
 import mail
 
 VK_URL = 'https://vk.com'
@@ -187,7 +185,7 @@ def compare_texts(old, new):
     # does not detect changes in line endings
     old_words = old.split()
     new_words = new.split()
-    differ = Differ()
+    differ = difflib.Differ()
     diff_words = tuple(differ.compare(old_words, new_words))
 
     for word in diff_words:
@@ -337,10 +335,10 @@ def build_attachment_html(attachment, template):
 
 def build_text_html(text):
     text = text.replace('<DELETED>',
-                                '<strike><span style="background-color:pink">')
+                        '<strike><span style="background-color:pink">')
     text = text.replace('</DELETED>', '</span></strike>')
     text = text.replace('<ADDED>',
-                           '<span style="background-color:palegreen">')
+                        '<span style="background-color:palegreen">')
     text = text.replace('</ADDED>', '</span>')
 
     html = '<p>' + text.replace('\n', '</p>\n<p>') + '</p>'
@@ -436,7 +434,7 @@ if __name__ == '__main__':
     args = argparser.parse_args(sys.argv[1:])
     if args.group_id:
         owner = -abs(args.group_id)
-    elif args.user_id:
+    else:
         if args.user_id < 0:
             args.error('User ID must be positive')
         owner = args.user_id
@@ -451,33 +449,34 @@ if __name__ == '__main__':
                         str(e))
         mail.send(msg)
         exit()
+    else:
+        try:
+            last_dump = get_last_dump(wall_path)
+        except OSError:
+            # No dir — first run for this wall
+            os.makedirs(wall_path, 0o700, True)
+            save_dump(new_dump, wall_path)
+            subject = 'Запуск отслеживания для стены '+str(owner)
+            text = ('Для стены '+str(owner)+' запущено отслеживание.\n')
+            msg = mail.make(args.from_email, args.to_email, subject, text)
+            mail.send(msg)
+            exit()
+        except ValueError:
+            # No previous dumps — dumps was deleted
+            save_dump(new_dump, wall_path)
+            subject = 'Перезапуск отслеживания для стены '+str(owner)
+            text = ('Для стены '+str(owner)+' перезапущено отслеживание.\n'
+                    'Вероятно, предыдущие дампы для стены были удалены.')
+            msg = mail.make(args.from_email, args.to_email, subject, text)
+            mail.send(msg)
+            exit()
+        else:
+            diff = compare_dumps(last_dump, new_dump)
 
-    try:
-        last_dump = get_last_dump(wall_path)
-    except OSError:
-        # No dir — first run for this wall
-        os.makedirs(wall_path, 0o700, True)
-        save_dump(new_dump, wall_path)
-        subject = 'Запуск отслеживания для стены '+str(owner)
-        text = ('Для стены '+str(owner)+' запущено отслеживание.\n')
-        msg = mail.make(args.from_email, args.to_email, subject, text)
-        mail.send(msg)
-        exit()
-    except ValueError:
-        # No previous dumps — dumps was deleted
-        save_dump(new_dump, wall_path)
-        subject = 'Перезапуск отслеживания для стены '+str(owner)
-        text = ('Для стены '+str(owner)+' перезапущено отслеживание.\n'
-                'Вероятно, предыдущие дампы для стены были удалены.')
-        msg = mail.make(args.from_email, args.to_email, subject, text)
-        mail.send(msg)
-        exit()
-
-    diff = compare_dumps(last_dump, new_dump)
-
-    if diff:
-        save_dump(new_dump, wall_path)
-        subject = build_subject(*diff)
-        html = build_html(owner, extended, TEMPLATE, *diff)
-        msg = mail.make(args.from_email, args.to_email, subject, html=html)
-        mail.send(msg)
+            if diff:
+                save_dump(new_dump, wall_path)
+                subject = build_subject(*diff)
+                html = build_html(owner, extended, TEMPLATE, *diff)
+                msg = mail.make(args.from_email, args.to_email,
+                                subject, html=html)
+                mail.send(msg)
