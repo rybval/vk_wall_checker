@@ -296,7 +296,7 @@ def build_subject(new_posts, deleted_posts, changed_posts,
         c = 'Комментарии ' + c
 
     if p and c:
-        subject = '. '.join(p, c)
+        subject = '. '.join((p, c))
     else:
         subject = p + c
 
