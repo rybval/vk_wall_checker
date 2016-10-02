@@ -40,7 +40,7 @@ TEMPLATE = {
 </html>""",
 'section': """<hr>
 <p> </p>
-<p><b>{name}</b></p>
+<h2>{name}</h2>
 {content}
 """,
 'post': """<p><a href="{link}"><font color="#808080">{id}, {date}</font></a></p>
@@ -53,9 +53,10 @@ TEMPLATE = {
 <p> </p>""",
 'sign': ('<p><font color="#808080">Подписано:</font> '
 '<a href="{signer_link}"><font color="#808080">{signer_name}</font></a></p>'),
-'attachments': '{attachments_joined}',
+'attachments': ('<p><i><font color="#808080">Приложения:</font></i></p>'
+                '{attachments_joined}'),
 'comment': '' ,
-'photo': '<p><img src="{link}"></p>',
+'photo': '<p><a href="{link}">Изображение</a></p>',
 'document': 'Документ: <a href="{link}">{title}</a>',
 'audio': ('Аудиозапись: <a href="{link}">{artist} — {title}</a> '
 '({lenght}, {size} Мб)'),
@@ -374,7 +375,11 @@ def build_post_html(post, template):
         for attachment in post['attachments']:
             attachment_html = build_attachment_html(attachment, template)
             attachment_html_list.append(attachment_html)
-    attachments_html = ''.join(attachment_html_list)
+
+        attachments_html = template['attachments'].format(
+                              attachments_joined=''.join(attachment_html_list))
+    else:
+        attachments_html = ''
 
     dt = datetime.fromtimestamp(post['date']).strftime(DATETIME_FORMAT)
 
