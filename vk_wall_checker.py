@@ -433,40 +433,19 @@ def create_argparser():
 
 
 def process_dump_fetch_fail(exception, directory):
-    # email with exception sends once
-    description = str(exception)
-    path = os.path.join(directory, 'exception.json')
-    try:
-        with open(path, encoding='utf-8') as file:
-            descriptions = json.load(file)
-    except IOError:
-        file_exists = False
-        new_exception = True
-        descriptions = [description]
-    else:
-        file_exists = True
-        if description in descriptions:
-            new_exception = False
-        else:
-            new_exception = True
-            descriptions.append(description)
+    # email with notification sends once
+    path = os.path.join(directory, 'exception')
 
-    if not file_exists or new_exception:
-        with open(path, 'w', encoding='utf-8') as file:
-            json.dump(descriptions, file,
-                      ensure_ascii=False,
-                      indent='    ',
-                      sort_keys=True)
-
-    if new_exception:
+    if not os.path.exists(path):
         msg = mail.make(args.from_email, args.to_email,
                         'Ошибка при получении нового дампа',
-                        description)
+                        str(exception))
         mail.send(msg)
+        open(path, 'w').close()
 
 
 def dump_fetch_ok(directory):
-    path = os.path.join(directory, 'exception.json')
+    path = os.path.join(directory, 'exception')
     try:
         os.remove(path)
     except:
