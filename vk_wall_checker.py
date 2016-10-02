@@ -432,6 +432,47 @@ def create_argparser():
     return parser
 
 
+def process_dump_fetch_fail(exception, directory):
+    # email with exception sends once
+    description = str(exception)
+    path = os.path.join(directory, 'exception.json')
+    try:
+        with open(path, encoding='utf-8') as file:
+            descriptions = json.load(file)
+    except IOError:
+        file_exists = False
+        new_exception = True
+        descriptions = [description]
+    else:
+        file_exists = True
+        if description in descriptions:
+            new_exception = False
+        else:
+            new_exception = True
+            descriptions.append(description)
+
+    if not file_exists or new_exception:
+        with open(path, 'w', encoding='utf-8') as file:
+            json.dump(descriptions, file,
+                      ensure_ascii=False,
+                      indent='    ',
+                      sort_keys=True)
+
+    if new_exception:
+        msg = mail.make(args.from_email, args.to_email,
+                        'Ошибка при получении нового дампа',
+                        description)
+        mail.send(msg)
+
+
+def dump_fetch_ok(directory):
+    path = os.path.join(directory, 'exception.json')
+    try:
+        os.remove(path)
+    except:
+        pass
+
+
 if __name__ == '__main__':
     argparser = create_argparser()
     args = argparser.parse_args(sys.argv[1:])
@@ -447,12 +488,9 @@ if __name__ == '__main__':
         new_dump, extended = get_new_dump(args.app_id, args.access_token,
                                           owner, args.comments)
     except Exception as e:
-        msg = mail.make(args.from_email, args.to_email,
-                        'Ошибка при получении нового дампа',
-                        str(e))
-        mail.send(msg)
-        exit()
+        process_dump_fetch_fail(e, wall_path)
     else:
+        dump_fetch_ok(wall_path)
         try:
             last_dump = get_last_dump(wall_path)
         except OSError:
@@ -463,7 +501,6 @@ if __name__ == '__main__':
             text = ('Для стены '+str(owner)+' запущено отслеживание.\n')
             msg = mail.make(args.from_email, args.to_email, subject, text)
             mail.send(msg)
-            exit()
         except ValueError:
             # No previous dumps — dumps was deleted
             save_dump(new_dump, wall_path)
@@ -472,7 +509,6 @@ if __name__ == '__main__':
                     'Вероятно, предыдущие дампы для стены были удалены.')
             msg = mail.make(args.from_email, args.to_email, subject, text)
             mail.send(msg)
-            exit()
         else:
             diff = compare_dumps(last_dump, new_dump)
 
