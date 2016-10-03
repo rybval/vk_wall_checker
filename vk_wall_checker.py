@@ -57,10 +57,16 @@ TEMPLATE = {
                 '{attachments_joined}'),
 'comment': '' ,
 'photo': '<p><a href="{link}">Изображение</a></p>',
-'document': 'Документ: <a href="{link}">{title}</a>',
-'audio': ('Аудиозапись: <a href="{link}">{artist} — {title}</a> '
-'({lenght}, {size} Мб)'),
-'video': 'Видео: <a href="{link}">{title}</a>'}
+'doc': ('<p>Документ ({type}): <a href="{link}">{title}</a> '
+        '({size:.3f} Мб)</p>'),
+'audio': ('<p>Аудиозапись: <a href="{link}">{artist} — {title}</a> '
+          '({duration})</p>'),
+'video': ('<p>Видео: <a href="{link}">{title}</a> ({duration})<br>\n'
+          '{description}</p>'),
+'link': '<p><a href="{link}">{title}</a><br>\n{description}</p>',
+'album': '<p>Альбом: {title} ({size} фотографий)<br>\n{description}</p>',
+'poll': '<p>Опрос: {question} ({answers})</p>',
+'answer': '{text} ({count}, {rate}%)'}
 
 
 def extended_data_processing(data):
@@ -83,11 +89,7 @@ def attachments_processing(attachments):
         elif attachment['type'] == 'audio':
             pass
         elif attachment['type'] == 'doc':
-            for key in tuple(attachment):
-                if key not in ('id', 'title', 'size',
-                               'url', 'photo_100', 'type'):
-                    del attachment[key]
-
+            pass
         elif attachment['type'] == 'video':
             pass
         elif attachment['type'] == 'link':
@@ -322,27 +324,65 @@ def get_link_by_id(owner_id, extended):
         link = VK_URL+'/club{}'.format(abs(int(owner_id)))
     return link
 
+
 def get_biggest_photo_link(photo):
     # to do using width/height attributes of photo object
     maxsize = max([int(key[6:]) for key in photo if key.startswith('photo_')])
     return photo['photo_{}'.format(maxsize)]
 
+
+def get_duration_str(vk_object):
+    duration_str = '{}:{}'.format(vk_object['duration'] // 60,
+                                  vk_object['duration'] % 60)
+    return duration_str
+
+
 def build_attachment_html(attachment, template):
-    # to do attachments processing
-    if attachment['type'] == 'photo':
+    type_ = attachment['type']
+    vk_object = attachment[type_]
+
+    if type_ == 'photo':
         # to do link to photo page addition
         photo_link = get_biggest_photo_link(attachment['photo'])
         html = template['photo'].format(link=photo_link)
-        return html
-    elif attachment['type'] == 'audio': pass
-    elif attachment['type'] == 'video': pass
-    elif attachment['type'] == 'doc': pass
-    elif attachment['type'] == 'link': pass
-    elif attachment['type'] == 'poll': pass
-    elif attachment['type'] == 'album': pass
-    else: pass
-
-    return '<p>'+attachment['type']+'</p>\n'
+    elif type_ == 'audio':
+        html = template['audio'].format(link=vk_object['url'],
+                                        artist=vk_object['artist'],
+                                        title=vk_object['title'],
+                                        duration=get_duration_str(vk_object))
+    elif type_ == 'video':
+        link = 'https://vk.com/video{}_{}'.format(vk_object['owner_id'],
+                                                  vk_object['id'])
+        html = template['video'].format(link=link,
+                                        title=vk_object['title'],
+                                        duration=get_duration_str(vk_object),
+                                        description=vk_object['description'])
+    elif type_ == 'doc':
+        html = template['doc'].format(link=vk_object['url'],
+                                      title=vk_object['title'],
+                                      type=vk.doc_types[vk_object['type']],
+                                      size=vk_object['size']/2**20)
+    elif type_ == 'link':
+        html = template['link'].format(link=vk_object['url'],
+                                       title=vk_object['title'],
+                                       description=vk_object['description'])
+    elif type_ == 'poll':
+        answers = []
+        for answer in vk_object['answers']:
+            answer_html = template['answer'].format(text=answer['text'],
+                                                    count=answer['votes'],
+                                                    rate=answer['rate'])
+            answers.append(answer_html)
+        answers_html = ', '.join(answers)
+        html = template['poll'].format(question=vk_object['question'],
+                                       answers=answers_html)
+    elif type_ == 'album':
+        html = template['album'].format(title=vk_object['title'],
+                                        size=vk_object['size'],
+                                        description=vk_object['description'])
+    else:
+        html = '<p>'+attachment['type']+'</p>\n'
+    return html
 
 
 def build_text_html(text):
@@ -377,7 +417,7 @@ def build_post_html(post, template):
             attachment_html_list.append(attachment_html)
 
         attachments_html = template['attachments'].format(
-                              attachments_joined=''.join(attachment_html_list))
+                      attachments_joined='<p> </p>'.join(attachment_html_list))
     else:
         attachments_html = ''
 
