@@ -332,8 +332,8 @@ def get_biggest_photo_link(photo):
 
 
 def get_duration_str(vk_object):
-    duration_str = '{}:{}'.format(vk_object['duration'] // 60,
-                                  vk_object['duration'] % 60)
+    duration_str = '{}:{:0>2}'.format(vk_object['duration'] // 60,
+                                      vk_object['duration'] % 60)
     return duration_str
 
 
