@@ -26,7 +26,7 @@ import vk
 import mail
 
 VK_URL = 'https://vk.com'
-WORKING_DIR = os.path.expanduser("~/.vk_group_checker")
+WORKING_DIR = os.path.expanduser("~/.vk_wall_checker")
 EXTENSION = '.json.bz2'
 POSTS_COUNT = 12
 DATETIME_FORMAT = '%Y.%m.%d-%H.%M.%S'
